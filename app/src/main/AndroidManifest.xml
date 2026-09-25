@@ -1,0 +1,30 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" android:maxSdkVersion="34"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="true"/>
+    <application android:label="Intercom Pocket" android:theme="@style/AppTheme" android:icon="@drawable/ic_intercom" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="true" android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:showWhenLocked="true" android:turnScreenOn="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <service android:name=".IntercomService" android:exported="false" android:foregroundServiceType="connectedDevice|microphone|phoneCall"/>
+        <service android:name=".IntercomConnectionService" android:label="Intercom Pocket" android:exported="true" android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter><action android:name="android.telecom.ConnectionService"/></intent-filter>
+        </service>
+    </application>
+</manifest>

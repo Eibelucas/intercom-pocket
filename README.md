@@ -87,4 +87,3 @@ Android references:
 Dependencies: OkHttp / Okio / Kotlin standard library (Apache 2.0), NanoHTTPD
 and NanoWSD (BSD 3-Clause), JetBrains annotations (Apache 2.0). JUnit and
 org.json are test-only dependencies. See THIRD-PARTY-NOTICES.txt.
-
