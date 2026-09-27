@@ -1,23 +1,24 @@
 # Intercom Satelite
 
-Unofficial Android companion for [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite). Install the signed APK on Android 12 or later, enter the same Intercom key as your kiosks, and enable the app's phone account to receive calls in the system Phone app. The package ID and signing certificate are unchanged from Intercom Pocket, so version 1.2.0 installs as an update.
+Unofficial Android companion for [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite). Install the signed APK on Android 12 or later, enter the same Intercom key as your kiosks, and enable the app's phone account to receive calls in the system Phone app. The package ID and signing certificate are unchanged from Intercom Pocket, so version 1.2.1 installs as an update.
 
 Calls and announcements stay on the local network. Audio is never recorded. No Kiosk Satellite code, logo, or assets are bundled.
 
 ## Features
 
 - Two-way calls from phone to kiosk and kiosk to phone, with system-managed incoming Android calls
-- Push-to-talk, hands-free mode, speaker control, certificate pin confirmation, and call diagnostics
+- Push-to-talk, hands-free mode, speaker control, and certificate pin confirmation
 - One-to-many announcements to available kiosks; a single failed kiosk does not end the other audio sockets
 - Home-screen kiosk widget with a confirmed per-widget destination
 - Optional start after boot or app update, if reception was enabled before restart
 - Local metadata-only call history with verified callback; no audio or shared secret in history
 - Weekly quiet hours, overnight schedules, and selected kiosk exceptions; manual Do Not Disturb still blocks everyone
 - Room aliases, icons, favorites, and system/light/dark themes with teal, blue, plum, or Android dynamic accent colors
+- A dedicated settings page, a card-based call screen, and a full call-history page with callbacks
 
 Long-press a kiosk row to edit its name, symbol, or favorite status. Add a widget from the Android home screen and select its kiosk. The widget opens the app, rechecks the saved kiosk identity, and then calls. Boot reception and quiet hours are configured in settings.
 
-German guides: [Installation and setup](docs/Einrichtung.md) · [Version 1.2.0 validation](docs/Pruefbericht-1.2.0.md).
+German guides: [Installation and setup](docs/Einrichtung.md) · [Version 1.2.1 validation](docs/Pruefbericht-1.2.1.md).
 
 ## Build and signing
 
