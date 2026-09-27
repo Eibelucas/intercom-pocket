@@ -13,7 +13,7 @@ final class PhoneCallSession {
     void answer(){synchronized(engine){
         if(!current()||answered||!engine.state.equals("ringing"))return;
         if(engine.peer.tls&&engine.tls.saved(engine.peer,false).isEmpty()){
-            engine.endIf(id,"Bitte das Kiosk-Zertifikat in Intercom Pocket bestätigen und erneut anrufen",true);return;
+            engine.endIf(id,"Bitte das Kiosk-Zertifikat in Intercom Satelite bestätigen und erneut anrufen",true);return;
         }
         answered=true;engine.diagnostics.event("In Telefon-App angenommen");
         engine.arm(id,12000,"Android hat Audio für den Anruf nicht freigegeben");
@@ -24,7 +24,7 @@ final class PhoneCallSession {
         if(!current()||!answered||!focus||started)return;
         started=true;
         try{prepare.run();engine.answer();}
-        catch(RuntimeException ex){engine.diagnostics.error("Telefon-Mikrofonfreigabe",ex);engine.endIf(id,"Android hat den Mikrofonstart blockiert. Mikrofonzugriff in Intercom Pocket prüfen.",true);}
+        catch(RuntimeException ex){engine.diagnostics.error("Telefon-Mikrofonfreigabe",ex);engine.endIf(id,"Android hat den Mikrofonstart blockiert. Mikrofonzugriff in Intercom Satelite prüfen.",true);}
     }
     void mute(boolean muted){synchronized(engine){if(current())engine.phoneMute(muted);}}
     void end(String reason,int cause){synchronized(engine){if(!current())return;engine.endIf(id,reason,true);close(cause);}}

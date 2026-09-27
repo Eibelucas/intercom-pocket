@@ -1,0 +1,5 @@
+<resources>
+    <string name="widget_brand">INTERCOM SATELITE</string>
+    <string name="widget_select">Kiosk wählen</string>
+    <string name="widget_call">Tippen zum Anrufen  →</string>
+</resources>

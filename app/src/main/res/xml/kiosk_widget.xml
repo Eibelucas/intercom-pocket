@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="180dp" android:minHeight="90dp" android:targetCellWidth="2" android:targetCellHeight="1" android:initialLayout="@layout/kiosk_widget" android:configure="de.local.intercompocket.WidgetSetupActivity" android:widgetCategory="home_screen" android:resizeMode="horizontal"/>

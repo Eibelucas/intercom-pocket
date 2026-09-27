@@ -30,13 +30,13 @@ public final class IntercomService extends Service {
     }
     public int onStartCommand(Intent intent,int flags,int startId){
         String action=intent==null?ENABLE:intent.getAction();
-        if(STOP.equals(action)){stopSelf();return START_NOT_STICKY;}
+        if(STOP.equals(action)){new Config(this).prefs.edit().putBoolean("enabledBefore",false).apply();stopSelf();return START_NOT_STICKY;}
         if(DECLINE.equals(action)){if(engine!=null&&engine.callId.equals(intent.getStringExtra("call")))engine.finish("Anruf abgelehnt",true);return START_NOT_STICKY;}
         if(RELOAD.equals(action)&&engine!=null){engine.stop();phone.close();engine=null;}
         if(engine==null){
             try{
                 Config config=new Config(this);if(config.key().isEmpty())throw new Exception("Bitte zuerst den Intercom-Schlüssel eintragen.");
-                engine=new Engine(this,config,()->main.post(this::update));engine.start();lastError="";
+                engine=new Engine(this,config,()->main.post(this::update));engine.start();lastError="";config.prefs.edit().putBoolean("enabledBefore",true).apply();
                 if(wake==null){wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"IntercomPocket:reachable");wake.acquire();}
                 WifiManager wifi=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);
                 if(wifi!=null&&wifiLock==null){wifiLock=wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF,"IntercomPocket:WiFi");wifiLock.acquire();}
@@ -53,7 +53,7 @@ public final class IntercomService extends Service {
     private Notification ongoing(String text){
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,10,new Intent(this,IntercomService.class).setAction(STOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this,"active").setSmallIcon(R.drawable.ic_notification).setContentTitle("Intercom Pocket").setContentText(text).setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Ausschalten",stop).build()).build();
+        return new Notification.Builder(this,"active").setSmallIcon(R.drawable.ic_notification).setContentTitle("Intercom Satelite").setContentText(text).setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Ausschalten",stop).build()).build();
     }
     void update(){
         if(instance!=this)return;Engine e=engine;if(e==null)return;
@@ -73,7 +73,7 @@ public final class IntercomService extends Service {
             nm.notify(2,n);
         }else if(!ringing){stopRing();nm.cancel(2);}
         if(!e.active()&&microphone){startForeground(1,ongoing("Im WLAN erreichbar"),ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);microphone=false;}
-        else nm.notify(1,ongoing(e.active()?"Gespräch mit "+(e.peer==null?"Kiosk":e.peer.name):e.config.dnd()?"Nicht stören ist aktiv":"Im WLAN erreichbar"));
+        else nm.notify(1,ongoing(e.state.equals("broadcasting")?"Durchsage läuft":e.active()?"Gespräch mit "+(e.peer==null?"Kiosk":e.config.display(e.peer)):e.config.dnd()?"Nicht stören ist aktiv":e.config.quiet()?"Ruhezeit ist aktiv":"Im WLAN erreichbar"));
     }
     private void stopRing(){if(ring!=null){ring.stop();ring=null;}ringingId="";}
     public void onDestroy(){

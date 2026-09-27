@@ -15,7 +15,7 @@ public final class IntercomConnectionService extends ConnectionService {
     }
     @Override public void onCreateIncomingConnectionFailed(PhoneAccountHandle manager,ConnectionRequest request){PhoneIntegration b=bridge();if(b!=null)b.failed(id(request));}
     @Override public Connection onCreateOutgoingConnection(PhoneAccountHandle manager,ConnectionRequest request){
-        return Connection.createFailedConnection(new DisconnectCause(DisconnectCause.ERROR,"Bitte den Kiosk in Intercom Pocket anrufen."));
+        return Connection.createFailedConnection(new DisconnectCause(DisconnectCause.ERROR,"Bitte den Kiosk in Intercom Satelite anrufen."));
     }
     @Override public void onConnectionServiceFocusGained(){hasFocus=true;PhoneIntegration b=bridge();if(b!=null)b.focus(true);}
     @Override public void onConnectionServiceFocusLost(){hasFocus=false;PhoneIntegration b=bridge();if(b!=null)b.focus(false);connectionServiceFocusReleased();}

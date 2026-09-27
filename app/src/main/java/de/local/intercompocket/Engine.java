@@ -24,6 +24,10 @@ final class Engine implements IntercomServer.Listener {
     volatile boolean phoneManaged,phoneMuted,endedLocally;
     volatile long since;
     volatile IntercomServer.Link link;
+    final ConcurrentHashMap<String,IntercomServer.Link> announcementLinks=new ConcurrentHashMap<>();
+    final ConcurrentHashMap<String,Peer> announcementPeers=new ConcurrentHashMap<>();
+    final CallHistory history;
+    volatile long started;
     private IntercomServer plain, encrypted;
     private ScheduledFuture<?> timeout;
     private Discovery discovery;
@@ -31,7 +35,8 @@ final class Engine implements IntercomServer.Listener {
     Engine(Context c,Config config,Observer observer){this(c,config,observer,null);}
     Engine(Context c,Config config,Observer observer,AudioPipe suppliedAudio){
         this.context=c;this.config=config;this.observer=observer;wire=new Wire(config.key());tls=new Tls(config);
-        audio=suppliedAudio!=null?suppliedAudio:new AudioPipe(c,new AudioPipe.Sink(){public void frame(byte[] b){IntercomServer.Link l=link;if(l!=null&&sending)l.bytes(b);}public void failed(String m){diagnostics.event(m);io.execute(()->finish(m,true));}});
+        history=new CallHistory(config.prefs);
+        audio=suppliedAudio!=null?suppliedAudio:new AudioPipe(c,new AudioPipe.Sink(){public void frame(byte[] b){if(!sending)return;if(state.equals("broadcasting")){for(IntercomServer.Link l:announcementLinks.values())l.bytes(b);}else{IntercomServer.Link l=link;if(l!=null)l.bytes(b);}}public void failed(String m){diagnostics.event(m);io.execute(()->finish(m,true));}});
         audio.diagnostics(diagnostics);
     }
     void start() throws Exception {
@@ -43,14 +48,14 @@ final class Engine implements IntercomServer.Listener {
             for(int i=0;i<saved.length();i++){JSONObject j=saved.getJSONObject(i);Peer p=new Peer(j.getString("host"),j.getInt("port"),j.optBoolean("tls"));p.manual=true;peers.put(p.addressKey(),p);}
             discovery=new Discovery(context,this);discovery.start();
             timer.scheduleWithFixedDelay(this::refresh,1,20,TimeUnit.SECONDS);
-            timer.scheduleWithFixedDelay(()->{IntercomServer.Link l=link;if(l!=null)l.ping();},15,15,TimeUnit.SECONDS);
+            timer.scheduleWithFixedDelay(()->{IntercomServer.Link l=link;if(l!=null)l.ping();for(IntercomServer.Link other:announcementLinks.values())other.ping();},15,15,TimeUnit.SECONDS);
             changed();
         }catch(Exception e){stop();throw e;}
     }
     void changed(){observer.changed();}
     boolean active(){return !state.equals("idle");}
     int port(){return config.tls()?2325:2324;}
-    public JSONObject identity(){return Wire.obj("id",config.id(),"name",config.name(),"version","2026.9.78-pocket.1","enabled",running&&!config.key().isEmpty(),"key",Wire.fingerprint(config.key()),"dnd",config.dnd(),"endpoint",Wire.obj("port",port(),"tls",config.tls()));}
+    public JSONObject identity(){return Wire.obj("id",config.id(),"name",config.name(),"version","2026.9.78-pocket.1","enabled",running&&!config.key().isEmpty(),"key",Wire.fingerprint(config.key()),"dnd",config.advertisedDnd(),"endpoint",Wire.obj("port",port(),"tls",config.tls()));}
     private JSONObject self(){return Wire.obj("id",config.id(),"name",config.name(),"address",Discovery.localIp(),"port",port(),"version","2026.9.78-pocket.1","tls",config.tls());}
     void found(Peer p){if(config.id().equals(p.id))return;peers.compute(p.addressKey(),(k,old)->old==null?p:old);io.execute(()->probe(peers.get(p.addressKey())));}
     void add(String address) throws Exception {
@@ -79,7 +84,7 @@ final class Engine implements IntercomServer.Listener {
                 else if(p.tls!=config.tls())p.status="TLS-Einstellung unterschiedlich";
                 else if(j.optBoolean("dnd"))p.status="Nicht stören";
                 else if(p.tls&&!checkPin(p,false)){}
-                else{p.status="Bereit";p.ready=true;}
+                else{p.status="Bereit";p.ready=true;config.remember(p);}
             }catch(Exception e){p.status="Nicht erreichbar";}
         }
         changed();
@@ -109,12 +114,48 @@ final class Engine implements IntercomServer.Listener {
     synchronized void call(Peer target){
         if(!running||active()||!target.ready)return;
         diagnostics.clear();diagnostics.event("Ausgehender Anruf");
-        callId=UUID.randomUUID().toString();peer=target;outgoing=true;broadcast=false;since=0;handsFree=false;sending=false;speaker=true;state="calling";detail="";
+        callId=UUID.randomUUID().toString();peer=target;outgoing=true;broadcast=false;since=0;started=System.currentTimeMillis();handsFree=false;sending=false;speaker=true;state="calling";detail="";
         String id=callId;arm(id,65000,"Keine Annahmebestätigung vom Kiosk empfangen – Rückweg zum Handy prüfen");changed();
         io.execute(()->{
             try{JSONObject r=post(target,"/api/intercom/call",Wire.obj("call",id,"kind","call","from",self()),id);String status=r.optString("status");diagnostics.event("Einladung beantwortet: "+reasonForDiagnostics(status));if(!status.equals("ringing")&&!status.equals("auto"))endIf(id,reason(status),false);}
             catch(Exception e){diagnostics.error("Anruf senden",e);endIf(id,"Kiosk nicht erreichbar",false);}
         });
+    }
+    synchronized void announce(){
+        if(!running||active())return;
+        ArrayList<Peer> targets=new ArrayList<>();for(Peer p:peers.values())if(p.ready&&targets.size()<32)targets.add(p);
+        if(targets.isEmpty())return;
+        diagnostics.clear();diagnostics.event("Durchsage an "+targets.size()+" Kiosks");
+        callId=UUID.randomUUID().toString();peer=null;outgoing=true;broadcast=true;since=0;started=System.currentTimeMillis();handsFree=false;sending=false;state="broadcasting";detail="Verbinde "+targets.size()+" Kiosks …";
+        String id=callId;arm(id,12000,"Kein Kiosk verbunden");changed();
+        for(Peer target:targets)io.execute(()->{
+            try{JSONObject reply=post(target,"/api/intercom/call",Wire.obj("call",id,"kind","broadcast","from",self()),id);
+                if(reply.optString("status").equals("listening")){if(id.equals(callId)&&state.equals("broadcasting")){announcementPeers.put(target.id,target);connectAnnouncement(target,id);}else notifyAnnouncementEnd(target,id);}
+                else diagnostics.event("Durchsage abgelehnt: "+reasonForDiagnostics(reply.optString("status")));
+            }catch(Exception e){diagnostics.error("Durchsage an Kiosk",e);}
+        });
+    }
+    private void notifyAnnouncementEnd(Peer target,String id){io.execute(()->{try{post(target,"/api/intercom/call/"+id,Wire.obj("action","hangup"),id);}catch(Exception ignored){}});}
+    private void connectAnnouncement(Peer target,String id){
+        try{
+            OkHttpClient client=tls.client(target,false);
+            Request request=new Request.Builder().url(target.base(false)+"/api/intercom/audio/"+id+"?token="+java.net.URLEncoder.encode(wire.token(id,config.id()),"UTF-8")).build();
+            client.newWebSocket(request,new WebSocketListener(){
+                IntercomServer.Link wrapped;
+                void clean(){client.dispatcher().executorService().shutdown();client.connectionPool().evictAll();}
+                public void onOpen(WebSocket s,Response r){
+                    wrapped=new IntercomServer.Link(){public void text(String t){s.send(t);}public void bytes(byte[] b){if(s.queueSize()>Wire.FRAME_BYTES*6L){s.cancel();return;}s.send(ByteString.of(b));}public void close(){s.close(1000,"ended");}public void ping(){}};
+                    synchronized(Engine.this){if(!id.equals(callId)||!state.equals("broadcasting")){wrapped.close();clean();return;}
+                        announcementLinks.put(target.id,wrapped);if(announcementLinks.size()==1){try{audio.start(true);if(timeout!=null)timeout.cancel(false);since=System.currentTimeMillis();}catch(Exception e){audioFailed(e);return;}}detail=announcementLinks.size()+" Kiosk(s) verbunden";changed();}
+                    wrapped.text(Wire.obj("type","talk","on",sending).toString());
+                }
+                public void onMessage(WebSocket s,String message){try{if(new JSONObject(message).optString("type").equals("end"))drop();}catch(Exception ignored){}}
+                public void onClosing(WebSocket s,int code,String reason){drop();s.close(1000,"ended");}
+                public void onClosed(WebSocket s,int code,String reason){drop();clean();}
+                public void onFailure(WebSocket s,Throwable t,Response r){drop();clean();}
+                void drop(){synchronized(Engine.this){if(wrapped!=null&&announcementLinks.remove(target.id,wrapped)){announcementPeers.remove(target.id);detail=announcementLinks.size()+" Kiosk(s) verbunden";if(announcementLinks.isEmpty()&&id.equals(callId))finish("Alle Kiosks getrennt",false);else changed();}}}
+            });
+        }catch(Exception e){diagnostics.error("Durchsage-Audio",e);announcementPeers.remove(target.id);}
     }
     public synchronized JSONObject incoming(JSONObject body,String token,String host){
         String id=body.optString("call");JSONObject from=body.optJSONObject("from");
@@ -123,11 +164,11 @@ final class Engine implements IntercomServer.Listener {
         if(claims==null||!claims.optString("from").equals(from.optString("id")))return Wire.obj("code",403,"status","key");
         if(!running)return Wire.obj("status","off");
         if(from.optBoolean("tls")!=config.tls())return Wire.obj("code",409,"status","tls");
-        if(config.dnd())return Wire.obj("status","dnd");if(active())return Wire.obj("status","busy");
+        if(config.blocks(from.optString("id")))return Wire.obj("status","dnd");if(active())return Wire.obj("status","busy");
         Peer incoming=Peer.from(from,host);if(incoming.port<1||incoming.port>65535)return Wire.obj("code",400,"status","invalid");
         String kind=body.optString("kind","call");if(!kind.equals("call")&&!kind.equals("broadcast"))return Wire.obj("code",400,"status","invalid");
         diagnostics.clear();diagnostics.event("Eingehender Anruf");
-        peer=incoming;callId=id;outgoing=false;broadcast=kind.equals("broadcast");handsFree=false;sending=false;speaker=true;since=0;detail="";
+        peer=incoming;callId=id;outgoing=false;broadcast=kind.equals("broadcast");handsFree=false;sending=false;speaker=true;since=0;started=System.currentTimeMillis();detail="";config.remember(incoming);
         if(broadcast){state="listening";arm(id,12000,"Durchsage nicht verbunden");try{audio.start(false);}catch(Exception e){finish("Audiowiedergabe nicht verfügbar",false);return Wire.obj("status","off");}}
         else{state="ringing";arm(id,45000,"Anruf verpasst");if(incoming.tls)io.execute(()->{try{checkPin(incoming,false);}catch(Exception ignored){}changed();});}
         changed();return Wire.obj("status",broadcast?"listening":"ringing");
@@ -143,6 +184,7 @@ final class Engine implements IntercomServer.Listener {
     }
     public synchronized JSONObject signal(String id,JSONObject body,String token,String host){
         JSONObject claims=wire.verify(token,id);
+        if(id.equals(callId)&&state.equals("broadcasting")&&claims!=null){Peer member=announcementPeers.get(claims.optString("from"));if(member!=null){String action=body.optString("action");if(action.equals("hangup")||action.equals("decline")||action.equals("cancel")){IntercomServer.Link l=announcementLinks.remove(member.id);announcementPeers.remove(member.id);if(l!=null)l.close();if(announcementLinks.isEmpty()&&since!=0)finish("Alle Kiosks getrennt",false);return Wire.obj("ok",true);}}}
         if(claims==null||!id.equals(callId)||peer==null||!peer.id.equals(claims.optString("from"))){diagnostics.event("Anrufsignal abgelehnt: Anmeldung oder Anrufzuordnung ungültig");return Wire.obj("code",403,"ok",false);}
         String action=body.optString("action");
         if(action.equals("answer")){
@@ -190,7 +232,7 @@ final class Engine implements IntercomServer.Listener {
         try{JSONObject j=new JSONObject(text);if(j.optString("type").equals("end"))endIf(id,"Gespräch beendet",false);else if(j.optString("type").equals("talk")){detail=j.optBoolean("on")?"Die andere Seite spricht":"Verbunden";changed();}}catch(Exception ignored){}
     }
     public void disconnected(String id,IntercomServer.Link l){if(l!=null&&l==link)endIf(id,"Verbindung beendet",false);}
-    synchronized void talk(boolean on){if(!state.equals("in_call"))return;sending=on&&audio.microphoneAvailable;audio.sending(sending);if(link!=null)link.text(Wire.obj("type","talk","on",sending).toString());changed();}
+    synchronized void talk(boolean on){if(!state.equals("in_call")&&!state.equals("broadcasting"))return;sending=on&&audio.microphoneAvailable;audio.sending(sending);String message=Wire.obj("type","talk","on",sending).toString();if(state.equals("broadcasting")){for(IntercomServer.Link l:announcementLinks.values())l.text(message);}else if(link!=null)link.text(message);changed();}
     synchronized void handsFree(boolean on){handsFree=on;talk(on);}
     synchronized void phoneMute(boolean muted){phoneMuted=muted;if(phoneManaged&&state.equals("in_call")&&sending!=(!muted&&audio.microphoneAvailable))talk(!muted);}
     public void httpEvent(String event){if(active())diagnostics.event(event);}
@@ -201,6 +243,8 @@ final class Engine implements IntercomServer.Listener {
         if(state.equals("calling"))diagnostics.event("Bis zum Ende keine Annahmebestätigung empfangen");
         endedLocally=notify;
         String id=callId;Peer old=peer;String oldState=state;IntercomServer.Link oldLink=link;
+        if(oldState.equals("broadcasting")){Peer all=new Peer("",2324,false);all.id="";all.name="Alle Kiosks";history.add(all,true,true,started,since,reason);}else history.add(old,outgoing,broadcast,started,since,reason);
+        if(oldState.equals("broadcasting")){for(Peer p:announcementPeers.values())if(notify)notifyAnnouncementEnd(p,id);for(IntercomServer.Link l:announcementLinks.values()){if(notify)l.text(Wire.obj("type","end").toString());l.close();}announcementLinks.clear();announcementPeers.clear();}
         state="idle";callId="";link=null;peer=null;sending=false;handsFree=false;since=0;detail=reason;
         if(timeout!=null)timeout.cancel(false);audio.stop();phoneManaged=false;phoneMuted=false;
         if(oldLink!=null){if(notify)oldLink.text(Wire.obj("type","end").toString());oldLink.close();}

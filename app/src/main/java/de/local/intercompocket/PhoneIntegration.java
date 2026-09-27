@@ -20,7 +20,7 @@ final class PhoneIntegration {
         try{
             TelecomManager manager=c.getSystemService(TelecomManager.class);
             if(manager==null)return false;
-            manager.registerPhoneAccount(PhoneAccount.builder(handle(c),"Intercom Pocket")
+            manager.registerPhoneAccount(PhoneAccount.builder(handle(c),"Intercom Satelite")
                     .setShortDescription("Kiosk-Anrufe im WLAN")
                     .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER)
                     .setSupportedUriSchemes(Collections.singletonList(PhoneAccount.SCHEME_SIP)).build());

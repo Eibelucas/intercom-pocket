@@ -1,89 +1,40 @@
-# Intercom Pocket
+# Intercom Satelite
 
-Version 1.1.0 adds a system-managed Android ConnectionService for incoming
-calls. Enable the Intercom Pocket phone account once in the system settings
-from the app's setup card. The existing dialer provides answer, reject,
-hangup, mute and audio routing. Capture starts after answer and Telecom
-focus, with continuous transmission until muted. Outgoing calls remain in
-Intercom Pocket. The app does not replace the default dialer or make SIM
-calls; its account only supports SIP-style local intercom addresses.
+Unofficial Android companion for [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite). Install the signed APK on Android 12 or later, enter the same Intercom key as your kiosks, and enable the app's phone account to receive calls in the system Phone app. The package ID and signing certificate are unchanged from Intercom Pocket, so version 1.2.0 installs as an update.
 
-Call diagnostics distinguish local cancellation from remote endings and
-show callback arrival and HTTP response stages. Both fixed-length and
-chunked HTTP request bodies are accepted with a 64 KiB limit. A regression
-test reproduces the old chunked-callback rejection. This does not establish
-whether that was the cause of the user's physical-device failure.
+Calls and announcements stay on the local network. Audio is never recorded. No Kiosk Satellite code, logo, or assets are bundled.
 
-Independent Android intercom companion for Kiosk Satellite. Native Java UI,
-Android audio, NSD discovery, and local HTTP/WebSocket communication.
-No code, logos or assets from Kiosk Satellite are included in this project.
-The warm paper / teal palette follows the requested visual direction.
+## Features
 
-## Build
+- Two-way calls from phone to kiosk and kiosk to phone, with system-managed incoming Android calls
+- Push-to-talk, hands-free mode, speaker control, certificate pin confirmation, and call diagnostics
+- One-to-many announcements to available kiosks; a single failed kiosk does not end the other audio sockets
+- Home-screen kiosk widget with a confirmed per-widget destination
+- Optional start after boot or app update, if reception was enabled before restart
+- Local metadata-only call history with verified callback; no audio or shared secret in history
+- Weekly quiet hours, overnight schedules, and selected kiosk exceptions; manual Do Not Disturb still blocks everyone
+- Room aliases, icons, favorites, and system/light/dark themes with teal, blue, plum, or Android dynamic accent colors
 
-Requires JDK 17, Android SDK platform 35, build-tools 35.0.0 and Gradle 8.13.
-Set `ANDROID_HOME` and run:
+Long-press a kiosk row to edit its name, symbol, or favorite status. Add a widget from the Android home screen and select its kiosk. The widget opens the app, rechecks the saved kiosk identity, and then calls. Boot reception and quiet hours are configured in settings.
+
+## Build and signing
+
+Requires JDK 17, Android SDK platform/build-tools 35, and Gradle 8.13.
 
 ```
 gradle :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
 ```
 
-The release APK is unsigned until signed with your own Android signing key.
-The delivered APK was separately signed; its signing key is not embedded in
-this source archive. Keep using the same signing key for app updates.
+The Gradle release output is unsigned. Sign it with your own key. An update to the previously distributed APK must use its original signing certificate, which is deliberately absent from this public repository.
 
-## Protocol
+## Protocol and security
 
-Reference: https://kiosksatellite.com/docs/intercom/
-and the public jxlarrea/kiosk-satellite intercom routes and authentication format,
-inspected September 24, 2026 (main branch at download time).
+Implements the public Kiosk Satellite intercom protocol independently: NSD `_kiosk-satellite._tcp.`, local identity and call routes, HMAC-SHA256 bearer tokens, replay protection, authenticated WebSockets, and PCM16LE 16 kHz mono audio. TLS is optional and requires explicit certificate pin confirmation per endpoint; there is no fallback to plaintext after enabling TLS. The shared key is encrypted with Android Keystore AES-GCM.
 
-- `_kiosk-satellite._tcp.` service, plain identity endpoint at port 2324
-- optional separate TLS listener at port 2325
-- supports legacy identity without the `endpoint` field
-- padded URL-safe Base64 payload/signature, HMAC-SHA256 with `intercom:` key
-  prefix, expiry in milliseconds, replay protection
-- calls, signals, PCM16 little-endian mono 16 kHz, 80 ms binary frames
-- authenticated audio sockets, talk/end controls, ring/connect timeouts
-- certificate pin confirmation per endpoint, no plaintext TLS fallback
-- shared secret encrypted using Android Keystore AES-GCM
-
-## Android behavior
-
-Minimum API 31, target API 35. `connectedDevice` foreground service provides
-LAN reachability. App calls add the microphone foreground type from the
-visible activity. Native incoming calls add phoneCall and microphone types
-after answer through the system-bound ConnectionService. A denied microphone
-foreground upgrade ends cleanly and records the failure. No microphone opens
-on an incoming ring. Telecom owns audio focus, mode and routing for native
-calls; the app does not reset the system audio route when such a call ends.
-If the account is disabled or microphone permission is missing, incoming
-calls use the existing app notification/activity flow. API 35+ checks only
-the app's registered accounts without phone-number permission. API 31–34
-requires READ_PHONE_NUMBERS to query the enabled account, requested only
-when enabling this feature. No READ_CALL_LOG or default-dialer role needed.
-No automatic boot start. Ongoing reachability holds CPU/Wi-Fi locks and can
-use additional battery. Device power management can still affect LAN calls.
+The Android `connectedDevice` foreground service maintains LAN reception. Microphone and `phoneCall` foreground types are added only when needed. The phone account uses `ConnectionService` without taking the default dialer role or reading the call log. Android and device-specific power management can still delay or block background reception.
 
 ## Validation
 
-JVM protocol tests exercise authentication failures, expiry/replay, public
-identity, signaling, body limits, TLS downgrade refusal and real WebSocket
-binary PCM round trips. They are not a physical Android microphone or
-Samsung power-management test. See the accompanying German test report.
+JVM tests cover protocol and call handling, real HTTP/WebSocket transitions, Android phone-session state, quiet-hour boundaries, and announcement failure isolation. Android Lint and a release build are run before distributing the signed APK. Hardware microphone behavior, Samsung Phone UI, widget placement, boot delivery, and visual layout on physical screen sizes still require device testing.
 
-PhoneCallSession tests exercise the real Engine with a local mock kiosk,
-mock hardware audio and a fake dialer display: focus gating, duplicate
-answer handling, continuous transmission, mute before/after connection,
-rejection, stale callbacks, focus loss and microphone permission failure.
-Android's actual binding, Samsung Phone UI, locked-screen audio and headset
-routing require a device test. No emulator or phone was available here.
-
-Android references:
-- https://developer.android.com/reference/android/telecom/ConnectionService
-- https://developer.android.com/reference/android/telecom/TelecomManager
-- https://developer.android.com/develop/background-work/services/fgs/service-types
-
-Dependencies: OkHttp / Okio / Kotlin standard library (Apache 2.0), NanoHTTPD
-and NanoWSD (BSD 3-Clause), JetBrains annotations (Apache 2.0). JUnit and
-org.json are test-only dependencies. See THIRD-PARTY-NOTICES.txt.
+Dependencies and licenses: [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). Protocol reference: [Kiosk Satellite intercom documentation](https://kiosksatellite.com/docs/intercom/).
