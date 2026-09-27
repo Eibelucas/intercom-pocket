@@ -17,6 +17,8 @@ Calls and announcements stay on the local network. Audio is never recorded. No K
 
 Long-press a kiosk row to edit its name, symbol, or favorite status. Add a widget from the Android home screen and select its kiosk. The widget opens the app, rechecks the saved kiosk identity, and then calls. Boot reception and quiet hours are configured in settings.
 
+German guides: [Installation and setup](docs/Einrichtung.md) · [Version 1.2.0 validation](docs/Pruefbericht-1.2.0.md).
+
 ## Build and signing
 
 Requires JDK 17, Android SDK platform/build-tools 35, and Gradle 8.13.
