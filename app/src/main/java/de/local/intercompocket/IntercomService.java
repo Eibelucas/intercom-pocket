@@ -17,6 +17,12 @@ public final class IntercomService extends Service {
     private Ringtone ring;
     private String ringingId="";
     private boolean microphone;
+    private String availability="";
+    private final Runnable availabilityTick=new Runnable(){public void run(){
+        Engine current=engine;
+        if(current!=null){String next=current.config.dnd()+":"+current.config.quiet();if(!next.equals(availability)){availability=next;update();}}
+        main.postDelayed(this,5000);
+    }};
     static volatile String lastError="";
     static final String ENABLE="enable", STOP="stop", DECLINE="decline", RELOAD="reload";
     public void onCreate(){
@@ -27,6 +33,7 @@ public final class IntercomService extends Service {
         NotificationChannel incoming=new NotificationChannel("calls","Eingehende Anrufe",NotificationManager.IMPORTANCE_HIGH);
         incoming.setSound(null,null);incoming.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);nm.createNotificationChannel(incoming);
         startForeground(1,ongoing("Wird gestartet …"),ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        main.post(availabilityTick);
     }
     public int onStartCommand(Intent intent,int flags,int startId){
         String action=intent==null?ENABLE:intent.getAction();
@@ -77,6 +84,7 @@ public final class IntercomService extends Service {
     }
     private void stopRing(){if(ring!=null){ring.stop();ring=null;}ringingId="";}
     public void onDestroy(){
+        main.removeCallbacks(availabilityTick);
         instance=null;if(engine!=null){engine.stop();engine=null;}phone.close();stopRing();getSystemService(NotificationManager.class).cancel(2);
         if(wake!=null&&wake.isHeld())wake.release();if(wifiLock!=null&&wifiLock.isHeld())wifiLock.release();stopForeground(STOP_FOREGROUND_REMOVE);super.onDestroy();
     }

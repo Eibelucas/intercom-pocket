@@ -16,11 +16,17 @@ import javax.crypto.spec.GCMParameterSpec;
 
 final class Config {
     final SharedPreferences prefs;
-    Config(Context c) {prefs=c.getSharedPreferences("intercom",Context.MODE_PRIVATE);if(!prefs.contains("id"))prefs.edit().putString("id",UUID.randomUUID().toString()).apply();}
+    private final java.util.function.LongSupplier clock;
+    Config(Context c) {this(c.getSharedPreferences("intercom",Context.MODE_PRIVATE),System::currentTimeMillis);}
+    Config(SharedPreferences prefs,java.util.function.LongSupplier clock) {this.prefs=prefs;this.clock=clock;if(!prefs.contains("id"))prefs.edit().putString("id",UUID.randomUUID().toString()).apply();}
     String id(){return prefs.getString("id","");}
     String name(){return prefs.getString("name","Mein A56");}
     boolean tls(){return prefs.getBoolean("tls",false);}
-    boolean dnd(){return prefs.getBoolean("dnd",false);}
+    boolean dnd(){long until=dndUntil();return prefs.getBoolean("dnd",false)&&(until==0||clock.getAsLong()<until);}
+    long dndUntil(){return prefs.getLong("dndUntil",0);}
+    void setDnd(boolean on){prefs.edit().putBoolean("dnd",on).remove("dndUntil").apply();}
+    void snoozeUntil(long until){if(until<=clock.getAsLong())throw new IllegalArgumentException("Ende muss in der Zukunft liegen");prefs.edit().putBoolean("dnd",true).putLong("dndUntil",until).apply();}
+    boolean acceptAnnouncements(){return prefs.getBoolean("acceptAnnouncements",true);}
     boolean autoStart(){return prefs.getBoolean("autoStart",false);}
     boolean enabledBefore(){return prefs.getBoolean("enabledBefore",false);}
     boolean quiet(){return QuietHours.active(prefs.getBoolean("quietEnabled",false),prefs.getInt("quietDays",127),prefs.getInt("quietStart",1320),prefs.getInt("quietEnd",420),LocalDateTime.now());}
@@ -38,6 +44,7 @@ final class Config {
         prefs.edit().putString("knownPeers",next.toString()).apply();
     }catch(Exception ignored){}}
     JSONArray known(){try{return new JSONArray(prefs.getString("knownPeers","[]"));}catch(Exception ignored){return new JSONArray();}}
+    String peerName(String id){String alias=alias(id);if(!alias.isEmpty())return alias;JSONArray peers=known();for(int i=0;i<peers.length();i++){JSONObject p=peers.optJSONObject(i);if(p!=null&&id.equals(p.optString("id")))return p.optString("name","Kiosk");}return "Unbekannter Kiosk";}
     String key(){
         try {
             String v=prefs.getString("secret","");if(v.isEmpty())return "";

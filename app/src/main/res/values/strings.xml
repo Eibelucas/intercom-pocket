@@ -2,4 +2,9 @@
     <string name="widget_brand">INTERCOM SATELITE</string>
     <string name="widget_select">Kiosk wählen</string>
     <string name="widget_call">Tippen zum Anrufen  →</string>
+    <string name="receive_announcements">Durchsagen empfangen</string>
+    <plurals name="selected_kiosks">
+        <item quantity="one">%d Kiosk ausgewählt</item>
+        <item quantity="other">%d Kiosks ausgewählt</item>
+    </plurals>
 </resources>

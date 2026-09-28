@@ -52,7 +52,7 @@ public final class MainActivity extends Activity {
     int dp(float n){return (int)(getResources().getDisplayMetrics().density*n+0.5f);}
     void refresh(){
         syncSystemTheme();
-        Engine e=engine();StringBuilder f=new StringBuilder(e==null?"off":e.state+e.callId+e.config.dnd()+e.config.quiet()+e.detail+e.phoneManaged);
+        Engine e=engine();StringBuilder f=new StringBuilder(e==null?"off":e.state+e.callId+e.config.dnd()+e.config.dndUntil()+e.config.quiet()+e.detail+e.phoneManaged);
         if(e!=null){for(Peer p:sorted(e))f.append(p.name).append(p.status).append(p.candidatePin).append(config.alias(p.id)).append(config.favorite(p.id));if(e.peer!=null)f.append(e.peer.candidatePin);}
         f.append(IntercomService.lastError);
         // Talk-state updates never replace the held touch target.
@@ -95,16 +95,19 @@ public final class MainActivity extends Activity {
         ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_intercom);header.addView(logo,new LinearLayout.LayoutParams(dp(36),dp(36)));
         Engine e=engine();boolean calling=e!=null&&e.active();
         if(!calling&&!screen.equals("home")){Button back=button("‹",paper,this::home);back.setTextColor(ink);back.setTextSize(28);back.setContentDescription("Zurück zur Übersicht");header.addView(back,new LinearLayout.LayoutParams(dp(48),dp(48)));}
-        TextView brand=text(calling||screen.equals("home")?"Intercom Satelite":screen.equals("settings")?"Einstellungen":"Anrufe",18,ink,true);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,-2,1);bp.setMargins(dp(12),0,0,0);header.addView(brand,bp);
+        TextView brand=text(calling||screen.equals("home")?"Intercom Satelite":screen.equals("settings")?"Einstellungen":screen.equals("groups")?"Raumgruppen":"Anrufe",18,ink,true);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,-2,1);bp.setMargins(dp(12),0,0,0);header.addView(brand,bp);
         if(!calling&&screen.equals("home")){Button settings=button("⚙",paper,this::settings);settings.setTextColor(ink);settings.setContentDescription("Einstellungen");header.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));}add(page,header);gap(page,28);
-        if(calling)renderCall(e);else if(screen.equals("settings"))renderSettings();else if(screen.equals("history"))renderHistory();else renderHome(e);
+        if(calling)renderCall(e);else if(screen.equals("settings"))renderSettings();else if(screen.equals("history"))renderHistory();else if(screen.equals("groups"))renderGroups();else renderHome(e);
     }
     void home(){screen="home";fingerprint="";render();}
     void renderHome(Engine e){
          LinearLayout availability=card();add(availability,text(e==null?"○  Du bist offline":config.dnd()?"◐  Nicht stören":config.quiet()?"◐  Ruhezeit":"●  Du bist erreichbar",18,e==null?muted:teal,true));gap(availability,8);
         add(availability,text(e==null?"Aktiviere Intercom, um im WLAN Anrufe zu empfangen.":config.name()+" · "+Discovery.localIp(),14,muted,false));gap(availability,18);
          if(e==null)add(availability,button(config.key().isEmpty()?"Intercom einrichten":"Intercom einschalten",teal,()->{if(config.key().isEmpty())settings();else enable();}));
-        else{Switch dnd=new Switch(this);tint(dnd);dnd.setText("Nicht stören");dnd.setTextSize(15);dnd.setTextColor(ink);dnd.setChecked(config.dnd());dnd.setPadding(0,dp(6),0,dp(6));dnd.setOnCheckedChangeListener((b,on)->{config.prefs.edit().putBoolean("dnd",on).apply();e.changed();});add(availability,dnd);}
+        else{Switch dnd=new Switch(this);tint(dnd);dnd.setText("Nicht stören");dnd.setTextSize(15);dnd.setTextColor(ink);dnd.setChecked(config.dnd());dnd.setPadding(0,dp(6),0,dp(6));dnd.setOnCheckedChangeListener((b,on)->{config.setDnd(on);e.changed();});add(availability,dnd);
+            if(config.dnd()){gap(availability,8);add(availability,text(config.dndUntil()==0?"Bis du es ausschaltest":"Bis "+DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT,Locale.GERMAN).format(new Date(config.dndUntil())),14,muted,false));}
+            gap(availability,12);secondary(availability,"Nicht stören für …",this::snoozeDnd);
+        }
         add(page,availability);gap(page,24);
         if(!phoneReady){LinearLayout phoneCard=card();add(phoneCard,text("Telefonanrufe aktivieren",18,ink,true));gap(phoneCard,8);add(phoneCard,text("Eingehende Anrufe erscheinen dann in deiner Telefon-App.",14,muted,false));gap(phoneCard,14);secondary(phoneCard,"Anrufkonto einrichten",this::phoneSettings);add(page,phoneCard);gap(page,24);}
         if(!IntercomService.lastError.isEmpty()){add(page,text(IntercomService.lastError,14,rust,false));gap(page,16);}
@@ -117,19 +120,20 @@ public final class MainActivity extends Activity {
             LinearLayout row=card();LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);LinearLayout label=column();add(label,text(config.icon(p.id)+"  "+config.display(p)+(config.favorite(p.id)?"  ★":""),18,ink,true));gap(label,6);add(label,text(p.status,13,p.ready?teal:muted,false));gap(label,5);add(label,text(p.host,12,muted,false));line.addView(label,new LinearLayout.LayoutParams(0,-2,1));
             Button call=button(p.ready?"Anrufen":p.candidatePin.isEmpty()?"Info":"Prüfen",p.ready?teal:secondaryColor,()->{if(!p.candidatePin.isEmpty())trust(p);else if(p.ready)withMic(()->{IntercomService s=IntercomService.instance;if(s!=null){s.microphone();e.call(p);}});else explain(p);});if(!p.ready)call.setTextColor(teal);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(52));lp.setMargins(dp(12),0,0,0);line.addView(call,lp);add(row,line);row.setOnLongClickListener(v->{roomOptions(e,p);return true;});add(page,row);gap(page,10);
         }
-        if(e!=null){gap(page,12);secondary(page,"+  Kiosk hinzufügen",this::addPeer);gap(page,24);Button announce=button("Durchsage an alle Kiosks",secondaryColor,()->withMic(()->{IntercomService s=IntercomService.instance;if(s!=null){e.announce();if(e.active())s.microphone();}}));announce.setTextColor(ink);boolean any=false;for(Peer p:e.peers.values())if(p.ready){any=true;break;}announce.setEnabled(any);if(!any)announce.setAlpha(.55f);add(page,announce);gap(page,10);secondary(page,"Anrufe ansehen",this::showHistory);gap(page,14);Button off=button("Erreichbarkeit ausschalten",paper,()->startService(new Intent(this,IntercomService.class).setAction(IntercomService.STOP)));off.setTextColor(muted);add(page,off);}
+        if(e!=null){gap(page,12);secondary(page,"+  Kiosk hinzufügen",this::addPeer);gap(page,24);Button announce=button("Durchsage starten …",secondaryColor,this::chooseAnnouncement);announce.setTextColor(ink);boolean any=false;for(Peer p:e.peers.values())if(p.ready){any=true;break;}announce.setEnabled(any);if(!any)announce.setAlpha(.55f);add(page,announce);gap(page,10);secondary(page,"Anrufe ansehen",this::showHistory);gap(page,14);Button off=button("Erreichbarkeit ausschalten",paper,()->startService(new Intent(this,IntercomService.class).setAction(IntercomService.STOP)));off.setTextColor(muted);add(page,off);}
+        gap(page,12);secondary(page,"Raumgruppen verwalten",()->{screen="groups";render();});
         gap(page,18);
     }
     void renderCall(Engine e){
         LinearLayout hero=card();hero.setPadding(dp(22),dp(28),dp(22),dp(24));
         TextView tag=text(e.state.equals("ringing")?"EINGEHENDER ANRUF":e.broadcast?"DURCHSAGE":"INTERCOM-ANRUF",12,teal,true);tag.setLetterSpacing(.12f);tag.setGravity(Gravity.CENTER);add(hero,tag);gap(hero,22);
         TextView avatar=text(e.broadcast?"◉":e.peer==null?"●":config.icon(e.peer.id),42,teal,true);avatar.setGravity(Gravity.CENTER);avatar.setBackground(shape(secondaryColor,28));LinearLayout.LayoutParams avatarParams=new LinearLayout.LayoutParams(dp(88),dp(88));avatarParams.gravity=Gravity.CENTER_HORIZONTAL;hero.addView(avatar,avatarParams);gap(hero,18);
-        TextView name=text(e.state.equals("broadcasting")?"Alle Kiosks":e.peer==null?"Kiosk":config.display(e.peer),32,ink,true);name.setGravity(Gravity.CENTER);add(hero,name);gap(hero,10);
+        TextView name=text(e.state.equals("broadcasting")?e.announcementTitle:e.peer==null?"Kiosk":config.display(e.peer),32,ink,true);name.setGravity(Gravity.CENTER);add(hero,name);gap(hero,10);
         String status=switch(e.state){case "calling"->"Kiosk wird angerufen …";case "ringing"->"Möchte mit dir sprechen";case "connecting"->"Audio wird verbunden …";case "broadcasting"->e.detail;case "listening"->"Du hörst eine Durchsage";default->"Verbunden";};
         TextView s=text(status,16,muted,false);s.setGravity(Gravity.CENTER);add(hero,s);gap(hero,20);
         time=text("00:00",24,ink,true);time.setTypeface(Typeface.MONOSPACE);time.setGravity(Gravity.CENTER);add(hero,time);gap(hero,14);
         meter=new Meter();hero.addView(meter,new LinearLayout.LayoutParams(-1,dp(64)));add(page,hero);gap(page,22);
-        if(!e.detail.isEmpty()&&!e.state.equals("in_call")){add(page,text(e.detail,14,rust,false));gap(page,12);}
+        if(!e.detail.isEmpty()&&!e.state.equals("in_call")&&!e.state.equals("broadcasting")){add(page,text(e.detail,14,rust,false));gap(page,12);}
         if(e.peer!=null&&!e.peer.candidatePin.isEmpty()){secondary(page,"Zertifikat des Kiosks bestätigen",()->trust(e.peer));gap(page,12);}
         if(e.phoneManaged){
             add(page,text(e.state.equals("ringing")?"Nimm den Anruf in der Telefon-App an. Die Anrufanzeige findest du auch in den Benachrichtigungen.":!e.audio.microphoneAvailable&&e.state.equals("in_call")?"Das Mikrofon ist nicht verfügbar. Du kannst zuhören.":"Du telefonierst über deine Telefon-App. Dort kannst du das Mikrofon stummschalten und zwischen Hörer, Lautsprecher und verbundenem Headset wechseln.",16,muted,false));gap(page,20);
@@ -184,6 +188,69 @@ public final class MainActivity extends Activity {
             config.prefs.edit().putString("alias:"+p.id,alias).putString("icon:"+p.id,icons[spinner.getSelectedItemPosition()]).apply();KioskWidget.refreshAll(this);fingerprint="";render();
         }).show();
     }
+    void snoozeDnd(){
+        String[] labels={"30 Minuten","2 Stunden","Bis morgen, 07:00 Uhr","Bis ich es ausschalte"};
+        new AlertDialog.Builder(this).setTitle("Nicht stören für …").setItems(labels,(dialog,choice)->{
+            if(choice==3)config.setDnd(true);
+            else{long until=choice==2?java.time.ZonedDateTime.now().plusDays(1).withHour(7).withMinute(0).withSecond(0).withNano(0).toInstant().toEpochMilli():System.currentTimeMillis()+(choice==0?30:120)*60000L;config.snoozeUntil(until);}
+            Engine e=engine();if(e!=null)e.changed();fingerprint="";render();
+        }).setNegativeButton("Abbrechen",null).show();
+    }
+    void chooseAnnouncement(){
+        List<RoomGroups.Group> groups=new RoomGroups(config.prefs).list();
+        ArrayList<String> labels=new ArrayList<>(Arrays.asList("Alle verfügbaren Kiosks","Kiosks auswählen …"));
+        for(RoomGroups.Group group:groups)labels.add(group.name+" · "+group.members.size()+" Kiosks");
+        new AlertDialog.Builder(this).setTitle("Durchsage an …").setItems(labels.toArray(new String[0]),(dialog,choice)->{
+            if(choice==0)startAnnouncement(null,"Alle Kiosks");
+            else if(choice==1)selectAnnouncementPeers();
+            else{RoomGroups.Group group=groups.get(choice-2);startAnnouncement(group.members,group.name);}
+        }).setNegativeButton("Abbrechen",null).show();
+    }
+    void startAnnouncement(Set<String> members,String title){
+        Set<String> selected=members==null?null:new LinkedHashSet<>(members);
+        withMic(()->{
+            IntercomService service=IntercomService.instance;if(service==null||service.engine==null){toast("Bitte Intercom einschalten.");return;}
+            Engine e=service.engine;if(e.active()){toast("Bitte zuerst das laufende Gespräch beenden.");return;}
+            service.microphone();e.announce(selected,title);if(!e.active())e.changed();
+        });
+    }
+    void selectAnnouncementPeers(){
+        Engine e=engine();if(e==null)return;
+        LinkedHashMap<String,Peer> unique=new LinkedHashMap<>();for(Peer peer:sorted(e))if(peer.ready&&!peer.id.isEmpty())unique.putIfAbsent(peer.id,peer);
+        ArrayList<Peer> peers=new ArrayList<>(unique.values());if(peers.isEmpty()){toast("Kein Kiosk ist erreichbar.");return;}
+        String[] labels=new String[peers.size()];for(int i=0;i<peers.size();i++)labels[i]=config.display(peers.get(i));
+        Set<String> selected=new LinkedHashSet<>();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Kiosks auswählen").setMultiChoiceItems(labels,new boolean[labels.length],(d,i,on)->{if(on)selected.add(peers.get(i).id);else selected.remove(peers.get(i).id);}).setNegativeButton("Abbrechen",null).setPositiveButton("Durchsage starten",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{if(selected.isEmpty()||selected.size()>RoomGroups.MAX_MEMBERS){toast("Bitte 1–32 Kiosks auswählen.");return;}dialog.dismiss();startAnnouncement(selected,"Ausgewählte Kiosks");}));dialog.show();
+    }
+    void renderGroups(){
+        add(page,text("Deine Raumgruppen",28,ink,true));gap(page,8);
+        add(page,text("Fasse Kiosks zusammen, um nur diese Räume mit einer Durchsage zu erreichen. Nicht erreichbare Räume werden übersprungen.",14,muted,false));gap(page,20);
+        List<RoomGroups.Group> groups=new RoomGroups(config.prefs).list();
+        if(groups.isEmpty()){add(page,text("Noch keine Raumgruppen. Verbinde zuerst deine Kiosks und lege dann zum Beispiel „Erdgeschoss“ an.",16,muted,false));gap(page,18);}
+        for(RoomGroups.Group group:groups){
+            LinearLayout box=card();add(box,text(group.name,20,ink,true));gap(box,8);
+            ArrayList<String> names=new ArrayList<>();for(String id:group.members)names.add(config.peerName(id));add(box,text(String.join(", ",names),14,muted,false));gap(box,14);
+            secondary(box,"Gruppe bearbeiten",()->editGroup(group));gap(box,8);
+            secondary(box,"Gruppe löschen",()->new AlertDialog.Builder(this).setTitle("Gruppe löschen?").setMessage(group.name+" wird entfernt. Die Kiosks bleiben gespeichert.").setNegativeButton("Abbrechen",null).setPositiveButton("Löschen",(d,w)->{new RoomGroups(config.prefs).remove(group.id);render();}).show());add(page,box);gap(page,12);
+        }
+        add(page,button("+  Raumgruppe erstellen",teal,()->editGroup(null)));
+    }
+    void editGroup(RoomGroups.Group group){
+        LinkedHashMap<String,String> known=new LinkedHashMap<>();JSONArray saved=config.known();
+        for(int i=0;i<saved.length();i++){JSONObject p=saved.optJSONObject(i);if(p!=null&&!p.optString("id").isEmpty())known.put(p.optString("id"),config.peerName(p.optString("id")));}
+        if(group!=null)for(String id:group.members)known.putIfAbsent(id,config.peerName(id));
+        if(known.isEmpty()){toast("Verbinde zuerst mindestens einen Kiosk.");return;}
+        ArrayList<String> ids=new ArrayList<>(known.keySet());ids.sort(Comparator.comparing(known::get));
+        String[] labels=new String[ids.size()];Set<String> selected=new LinkedHashSet<>();if(group!=null)selected.addAll(group.members);
+        for(int i=0;i<ids.size();i++)labels[i]=known.get(ids.get(i));
+        LinearLayout box=column();box.setPadding(dp(24),dp(12),dp(24),dp(12));EditText name=field("Zum Beispiel Erdgeschoss");if(group!=null)name.setText(group.name);add(box,name);gap(box,12);
+        Button members=button(selectedKiosks(selected.size()),secondaryColor,()->{});members.setTextColor(ink);
+        members.setOnClickListener(v->{boolean[] pending=new boolean[ids.size()];for(int i=0;i<ids.size();i++)pending[i]=selected.contains(ids.get(i));new AlertDialog.Builder(this).setTitle("Räume der Gruppe").setMultiChoiceItems(labels,pending,(d,i,on)->pending[i]=on).setNegativeButton("Abbrechen",null).setPositiveButton("Übernehmen",(d,w)->{selected.clear();for(int i=0;i<ids.size();i++)if(pending[i])selected.add(ids.get(i));members.setText(selectedKiosks(selected.size()));}).show();});add(box,members);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(group==null?"Raumgruppe erstellen":"Raumgruppe bearbeiten").setView(box).setNegativeButton("Abbrechen",null).setPositiveButton("Speichern",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{new RoomGroups(config.prefs).save(group==null?null:group.id,name.getText().toString(),selected);dialog.dismiss();render();}catch(IllegalArgumentException ex){toast(ex.getMessage());}}));dialog.show();
+    }
+    String selectedKiosks(int count){return getResources().getQuantityString(R.plurals.selected_kiosks,count,count);}
     void showHistory(){screen="history";render();}
     void renderHistory(){
         add(page,text("Deine Anrufe",28,ink,true));gap(page,7);
@@ -191,7 +258,7 @@ public final class MainActivity extends Activity {
         ArrayList<JSONObject> rows=new CallHistory(config.prefs).entries();
         if(rows.isEmpty()){LinearLayout empty=card();add(empty,text("Noch keine Anrufe",19,ink,true));gap(empty,8);add(empty,text("Hier erscheinen deine Gespräche und Durchsagen.",14,muted,false));add(page,empty);return;}
         DateFormat dates=DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT,Locale.GERMAN);
-        for(JSONObject item:rows){String id=item.optString("id"),alias=config.alias(id);String name=item.optBoolean("announcement")?"Durchsage":alias.isEmpty()?item.optString("name","Kiosk"):alias;
+        for(JSONObject item:rows){String id=item.optString("id"),alias=config.alias(id);String name=item.optBoolean("announcement")?"Durchsage · "+item.optString("name","Kiosks"):alias.isEmpty()?item.optString("name","Kiosk"):alias;
             LinearLayout row=card();LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
             TextView icon=text(item.optBoolean("announcement")?"◉":item.optBoolean("out")?"↗":"↙",26,teal,true);icon.setGravity(Gravity.CENTER);top.addView(icon,new LinearLayout.LayoutParams(dp(46),dp(46)));
             LinearLayout labels=column();add(labels,text(name,18,ink,true));gap(labels,5);add(labels,text(dates.format(new Date(item.optLong("at"))),13,muted,false));LinearLayout.LayoutParams labelsParams=new LinearLayout.LayoutParams(0,-2,1);labelsParams.setMargins(dp(10),0,0,0);top.addView(labels,labelsParams);add(row,top);gap(row,12);
@@ -218,12 +285,14 @@ public final class MainActivity extends Activity {
         add(connection,text("Muss zu „Encrypt communications“ am Kiosk passen.",13,muted,false));add(page,connection);gap(page,20);
         add(page,text("ANRUFE & ERREICHBARKEIT",12,teal,true));gap(page,10);
         LinearLayout calls=card();secondary(calls,"Telefonkonto",this::phoneSettings);gap(calls,10);secondary(calls,"Empfang im Hintergrund",this::battery);gap(calls,10);secondary(calls,"Ruhezeiten und Ausnahmen",this::quietSettings);gap(calls,18);
+        Switch announcements=new Switch(this);tint(announcements);announcements.setText(R.string.receive_announcements);announcements.setTextColor(ink);announcements.setChecked(config.acceptAnnouncements());add(calls,announcements);gap(calls,7);
+        add(calls,text("Wenn ausgeschaltet, dürfen Einzelanrufe weiterhin klingeln. Ruhezeiten und Nicht stören gelten zusätzlich.",13,muted,false));gap(calls,18);
         Switch boot=new Switch(this);tint(boot);boot.setText("Nach Neustart erreichbar");boot.setTextColor(ink);boot.setChecked(config.autoStart());add(calls,boot);gap(calls,7);
         add(calls,text("Startet nach dem ersten Entsperren, wenn Intercom zuvor eingeschaltet war.",13,muted,false));
         if(Build.VERSION.SDK_INT>=34){gap(calls,14);secondary(calls,"Anrufe auf dem Sperrbildschirm",()->startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,Uri.parse("package:"+getPackageName()))));}add(page,calls);gap(page,20);
         add(page,text("ERSCHEINUNGSBILD",12,teal,true));gap(page,10);
         LinearLayout appearance=card();secondary(appearance,"Design · "+config.prefs.getString("theme","system"),this::themeSettings);gap(appearance,10);secondary(appearance,"Akzentfarbe",this::accentSettings);add(page,appearance);gap(page,24);
-        add(page,button("Einstellungen speichern",teal,()->{String n=name.getText().toString().trim(),k=key.getText().toString().trim();if(n.isEmpty()||n.length()>48){name.setError("Bitte einen Namen mit 1–48 Zeichen eingeben");return;}if(k.isEmpty()||k.length()>4096){key.setError("Bitte den Intercom-Schlüssel einfügen");return;}try{config.save(n,k,tls.isChecked());config.prefs.edit().putBoolean("autoStart",boot.isChecked()).apply();if(engine()!=null)startService(new Intent(this,IntercomService.class).setAction(IntercomService.RELOAD));else enable();toast("Einstellungen gespeichert");home();}catch(Exception ex){toast("Einstellungen konnten nicht gespeichert werden");}}));gap(page,26);
+        add(page,button("Einstellungen speichern",teal,()->{String n=name.getText().toString().trim(),k=key.getText().toString().trim();if(n.isEmpty()||n.length()>48){name.setError("Bitte einen Namen mit 1–48 Zeichen eingeben");return;}if(k.isEmpty()||k.length()>4096){key.setError("Bitte den Intercom-Schlüssel einfügen");return;}try{config.save(n,k,tls.isChecked());config.prefs.edit().putBoolean("autoStart",boot.isChecked()).putBoolean("acceptAnnouncements",announcements.isChecked()).apply();if(engine()!=null)startService(new Intent(this,IntercomService.class).setAction(IntercomService.RELOAD));else enable();toast("Einstellungen gespeichert");home();}catch(Exception ex){toast("Einstellungen konnten nicht gespeichert werden");}}));gap(page,26);
         add(page,text("Eigenständige Companion-App für Kiosk Satellite. Anrufe bleiben im lokalen WLAN; Audio wird nicht gespeichert.",12,muted,false));
     }
     void themeSettings(){String[] modes={"System","Hell","Dunkel"};String[] values={"system","light","dark"};String current=config.prefs.getString("theme","system");int selected=current.equals("light")?1:current.equals("dark")?2:0;
