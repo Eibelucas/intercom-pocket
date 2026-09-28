@@ -27,6 +27,21 @@ gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
 
 ## Noch auf Geräten zu prüfen
 
-Die neue Oberfläche wurde nicht in einem Telefon-Emulator oder auf einem physischen Gerät bedient. Vor einer Veröffentlichung: Gruppen anlegen und bearbeiten, kleine Bildschirme/große Schrift, Durchsagen mit mehreren echten Kiosks, Sperrbildschirmempfang und Benachrichtigung nach Ablauf von „Nicht stören“ prüfen. Mikrofon, Samsung-Telefon-App und OEM-Energiesparverhalten sind durch die JVM-Tests nicht abgedeckt.
+Zusätzlich wurde die Oberfläche in einem separaten Android-15-Telefon-Emulator (Pixel-6-Profil) bedient. Zwei lokale simulierte Kiosks standen bereit. Erfolgreich geprüft:
+
+- Einrichtung und manuelles Hinzufügen beider Testkiosks.
+- Gruppe anlegen, bearbeiten und löschen; Mitgliedschaft und Timer bleiben nach Beenden und Neustarten des App-Prozesses erhalten.
+- Durchsage an die Gruppe mit einem ausgewählten Kiosk. Der simulierte zweite Kiosk erhielt keine Einladung; die Ansicht zeigte den tatsächlich verbundenen Empfänger.
+- „Nicht stören“ für 30 Minuten einstellen und manuell ausschalten.
+- Durchsage-Empfang in den Einstellungen ausschalten. Authentifizierte Testanfragen wurden anschließend für `broadcast` mit `dnd`, für Einzelanrufe mit `ringing` beantwortet.
+- Gruppenansicht bei 720 × 1280 Pixeln, 320 dpi und Schriftfaktor 1,3; die Bedienelemente waren erreichbar und die Gruppe ließ sich löschen.
+
+Vor einer regulären Veröffentlichung bleiben Tests auf physischen Geräten mit echten Kiosks erforderlich: Mikrofon- und Lautsprecherqualität, Samsung-Telefon-App, Sperrbildschirmempfang und Benachrichtigung nach Ablauf von „Nicht stören“. OEM-Energiesparverhalten wird durch den Emulator nicht nachgebildet.
 
 Paket-ID unverändert; Versionscode 6, Versionsname 1.3.0. Ein Update der vorhandenen Installation benötigt den ursprünglichen privaten Signaturschlüssel, der nicht im Repository enthalten ist.
+
+## Separate lokale Test-APK
+
+Für einen Test ohne den bislang nicht verfügbaren ursprünglichen Signaturschlüssel wurde außerhalb dieses Repositorys eine separate APK gebaut: Paket-ID `de.local.intercompocket.preview`, Versionsname `1.3.0-preview`, Beschriftung „Intercom Satelite Test“. Die Anwendungslogik entspricht dem Feature-Commit `fb223a2201c09a1ca538d665bd26ea2e67f80702`; nur Paket-ID, Versionsname und Manifest-Beschriftung wurden angepasst.
+
+Die Test-APK wurde mit einem neuen privaten Schlüssel signiert, die Signatur geprüft und die Installation samt Start neben dem ursprünglichen Paket im Emulator bestätigt. Der Schlüssel wurde separat lokal gesichert und nicht im Repository abgelegt. Die Test-App hat eigene Einstellungen. Vor Aktivierung ihres Empfangs muss der Empfang der bisherigen App ausgeschaltet werden, da beide dieselben Ports verwenden. Diese APK ist kein Update für die bisherige Installation und wurde nicht als reguläres GitHub-Release veröffentlicht.
