@@ -20,6 +20,6 @@ final class CallDiagnostics {
         }
         event(stage+": "+types);
     }
-    synchronized String report(){return "Intercom Satelite 1.2.0\n"+String.join("\n",events);}
+    synchronized String report(){return "Intercom Satelite 1.3.0\n"+String.join("\n",events);}
     synchronized boolean hasEvents(){return !events.isEmpty();}
 }

@@ -26,6 +26,8 @@ final class Engine implements IntercomServer.Listener {
     volatile IntercomServer.Link link;
     final ConcurrentHashMap<String,IntercomServer.Link> announcementLinks=new ConcurrentHashMap<>();
     final ConcurrentHashMap<String,Peer> announcementPeers=new ConcurrentHashMap<>();
+    private final Map<String,String> announcementNames=new LinkedHashMap<>(),announcementStates=new LinkedHashMap<>();
+    volatile String announcementTitle="Alle Kiosks";
     final CallHistory history;
     volatile long started;
     private IntercomServer plain, encrypted;
@@ -121,19 +123,46 @@ final class Engine implements IntercomServer.Listener {
             catch(Exception e){diagnostics.error("Anruf senden",e);endIf(id,"Kiosk nicht erreichbar",false);}
         });
     }
-    synchronized void announce(){
+    synchronized void announce(){announce(null,"Alle Kiosks");}
+    synchronized void announce(Set<String> selected,String title){
         if(!running||active())return;
-        ArrayList<Peer> targets=new ArrayList<>();for(Peer p:peers.values())if(p.ready&&targets.size()<32)targets.add(p);
-        if(targets.isEmpty())return;
+        if(selected!=null&&(selected.isEmpty()||selected.size()>RoomGroups.MAX_MEMBERS)){detail="Bitte 1–32 Kiosks auswählen.";changed();return;}
+        Map<String,Peer> available=new TreeMap<>();
+        for(Peer p:peers.values())if(!p.id.isEmpty()&&(selected==null||selected.contains(p.id))){Peer previous=available.get(p.id);if(previous==null||!previous.ready&&p.ready)available.put(p.id,p);}
+        announcementNames.clear();announcementStates.clear();
+        Collection<String> ids=selected==null?available.keySet():new TreeSet<>(selected);
+        ArrayList<Peer> targets=new ArrayList<>();
+        for(String id:ids){
+            Peer p=available.get(id);if(selected==null&&(p==null||!p.ready||targets.size()>=RoomGroups.MAX_MEMBERS))continue;
+            String name=p==null?config.peerName(id):config.display(p);if(name==null||name.isEmpty())name=p==null?"Unbekannter Kiosk":p.name;
+            announcementNames.put(id,name);
+            if(p!=null&&p.ready){targets.add(p);announcementStates.put(id,"Verbinde …");}
+            else announcementStates.put(id,p==null?"Nicht gefunden":p.status);
+        }
+        if(targets.isEmpty()){detail="Kein ausgewählter Kiosk ist erreichbar.";changed();return;}
         diagnostics.clear();diagnostics.event("Durchsage an "+targets.size()+" Kiosks");
-        callId=UUID.randomUUID().toString();peer=null;outgoing=true;broadcast=true;since=0;started=System.currentTimeMillis();handsFree=false;sending=false;state="broadcasting";detail="Verbinde "+targets.size()+" Kiosks …";
+        callId=UUID.randomUUID().toString();peer=null;outgoing=true;broadcast=true;since=0;started=System.currentTimeMillis();handsFree=false;sending=false;state="broadcasting";announcementTitle=title;updateAnnouncementDetail();
         String id=callId;arm(id,12000,"Kein Kiosk verbunden");changed();
         for(Peer target:targets)io.execute(()->{
             try{JSONObject reply=post(target,"/api/intercom/call",Wire.obj("call",id,"kind","broadcast","from",self()),id);
-                if(reply.optString("status").equals("listening")){if(id.equals(callId)&&state.equals("broadcasting")){announcementPeers.put(target.id,target);connectAnnouncement(target,id);}else notifyAnnouncementEnd(target,id);}
-                else diagnostics.event("Durchsage abgelehnt: "+reasonForDiagnostics(reply.optString("status")));
-            }catch(Exception e){diagnostics.error("Durchsage an Kiosk",e);}
+                if(reply.optString("status").equals("listening")){synchronized(Engine.this){if(id.equals(callId)&&state.equals("broadcasting")){announcementPeers.put(target.id,target);connectAnnouncement(target,id);}else notifyAnnouncementEnd(target,id);}}
+                else announcementFailed(id,target,reason(reply.optString("status")));
+            }catch(Exception e){announcementFailed(id,target,"Nicht erreichbar");}
         });
+    }
+    private void updateAnnouncementDetail(){
+        StringBuilder text=new StringBuilder(announcementLinks.size()+" von "+announcementNames.size()+" Kiosks verbunden");
+        for(String id:announcementNames.keySet())text.append("\n").append(announcementNames.get(id)).append(" · ").append(announcementStates.get(id));
+        detail=text.toString();
+    }
+    private synchronized void announcementFailed(String id,Peer target,String status){
+        if(!id.equals(callId)||!state.equals("broadcasting"))return;
+        announcementPeers.remove(target.id);announcementStates.put(target.id,status);updateAnnouncementDetail();changed();
+        boolean pending=announcementStates.containsValue("Verbinde …");
+        if(announcementLinks.isEmpty()&&!pending){
+            String recipients=detail;finish("Keine Kiosks mehr verbunden",false);
+            detail="Durchsage beendet\n"+recipients;changed();
+        }
     }
     private void notifyAnnouncementEnd(Peer target,String id){io.execute(()->{try{post(target,"/api/intercom/call/"+id,Wire.obj("action","hangup"),id);}catch(Exception ignored){}});}
     private void connectAnnouncement(Peer target,String id){
@@ -145,17 +174,17 @@ final class Engine implements IntercomServer.Listener {
                 void clean(){client.dispatcher().executorService().shutdown();client.connectionPool().evictAll();}
                 public void onOpen(WebSocket s,Response r){
                     wrapped=new IntercomServer.Link(){public void text(String t){s.send(t);}public void bytes(byte[] b){if(s.queueSize()>Wire.FRAME_BYTES*6L){s.cancel();return;}s.send(ByteString.of(b));}public void close(){s.close(1000,"ended");}public void ping(){}};
-                    synchronized(Engine.this){if(!id.equals(callId)||!state.equals("broadcasting")){wrapped.close();clean();return;}
-                        announcementLinks.put(target.id,wrapped);if(announcementLinks.size()==1){try{audio.start(true);if(timeout!=null)timeout.cancel(false);since=System.currentTimeMillis();}catch(Exception e){audioFailed(e);return;}}detail=announcementLinks.size()+" Kiosk(s) verbunden";changed();}
+                    synchronized(Engine.this){if(!id.equals(callId)||!state.equals("broadcasting")||!announcementPeers.containsKey(target.id)){wrapped.close();clean();return;}
+                        announcementLinks.put(target.id,wrapped);if(since==0){try{audio.start(true);if(timeout!=null)timeout.cancel(false);since=System.currentTimeMillis();}catch(Exception e){audioFailed(e);return;}}announcementStates.put(target.id,"Verbunden");updateAnnouncementDetail();changed();}
                     wrapped.text(Wire.obj("type","talk","on",sending).toString());
                 }
-                public void onMessage(WebSocket s,String message){try{if(new JSONObject(message).optString("type").equals("end"))drop();}catch(Exception ignored){}}
+                public void onMessage(WebSocket s,String message){try{if(new JSONObject(message).optString("type").equals("end")){drop();s.close(1000,"ended");}}catch(Exception ignored){}}
                 public void onClosing(WebSocket s,int code,String reason){drop();s.close(1000,"ended");}
                 public void onClosed(WebSocket s,int code,String reason){drop();clean();}
                 public void onFailure(WebSocket s,Throwable t,Response r){drop();clean();}
-                void drop(){synchronized(Engine.this){if(wrapped!=null&&announcementLinks.remove(target.id,wrapped)){announcementPeers.remove(target.id);detail=announcementLinks.size()+" Kiosk(s) verbunden";if(announcementLinks.isEmpty()&&id.equals(callId))finish("Alle Kiosks getrennt",false);else changed();}}}
+                void drop(){synchronized(Engine.this){if(!id.equals(callId)||!state.equals("broadcasting"))return;if(wrapped!=null&&!announcementLinks.remove(target.id,wrapped))return;announcementFailed(id,target,"Verbindung beendet");}}
             });
-        }catch(Exception e){diagnostics.error("Durchsage-Audio",e);announcementPeers.remove(target.id);}
+        }catch(Exception e){announcementFailed(id,target,"Audio nicht verbunden");}
     }
     public synchronized JSONObject incoming(JSONObject body,String token,String host){
         String id=body.optString("call");JSONObject from=body.optJSONObject("from");
@@ -167,6 +196,7 @@ final class Engine implements IntercomServer.Listener {
         if(config.blocks(from.optString("id")))return Wire.obj("status","dnd");if(active())return Wire.obj("status","busy");
         Peer incoming=Peer.from(from,host);if(incoming.port<1||incoming.port>65535)return Wire.obj("code",400,"status","invalid");
         String kind=body.optString("kind","call");if(!kind.equals("call")&&!kind.equals("broadcast"))return Wire.obj("code",400,"status","invalid");
+        if(kind.equals("broadcast")&&!config.acceptAnnouncements())return Wire.obj("status","dnd");
         diagnostics.clear();diagnostics.event("Eingehender Anruf");
         peer=incoming;callId=id;outgoing=false;broadcast=kind.equals("broadcast");handsFree=false;sending=false;speaker=true;since=0;started=System.currentTimeMillis();detail="";config.remember(incoming);
         if(broadcast){state="listening";arm(id,12000,"Durchsage nicht verbunden");try{audio.start(false);}catch(Exception e){finish("Audiowiedergabe nicht verfügbar",false);return Wire.obj("status","off");}}
@@ -184,7 +214,7 @@ final class Engine implements IntercomServer.Listener {
     }
     public synchronized JSONObject signal(String id,JSONObject body,String token,String host){
         JSONObject claims=wire.verify(token,id);
-        if(id.equals(callId)&&state.equals("broadcasting")&&claims!=null){Peer member=announcementPeers.get(claims.optString("from"));if(member!=null){String action=body.optString("action");if(action.equals("hangup")||action.equals("decline")||action.equals("cancel")){IntercomServer.Link l=announcementLinks.remove(member.id);announcementPeers.remove(member.id);if(l!=null)l.close();if(announcementLinks.isEmpty()&&since!=0)finish("Alle Kiosks getrennt",false);return Wire.obj("ok",true);}}}
+        if(id.equals(callId)&&state.equals("broadcasting")&&claims!=null){Peer member=announcementPeers.get(claims.optString("from"));if(member!=null){String action=body.optString("action");if(action.equals("hangup")||action.equals("decline")||action.equals("cancel")){IntercomServer.Link l=announcementLinks.remove(member.id);if(l!=null)l.close();announcementFailed(id,member,"Durchsage geschlossen");return Wire.obj("ok",true);}}}
         if(claims==null||!id.equals(callId)||peer==null||!peer.id.equals(claims.optString("from"))){diagnostics.event("Anrufsignal abgelehnt: Anmeldung oder Anrufzuordnung ungültig");return Wire.obj("code",403,"ok",false);}
         String action=body.optString("action");
         if(action.equals("answer")){
@@ -243,7 +273,7 @@ final class Engine implements IntercomServer.Listener {
         if(state.equals("calling"))diagnostics.event("Bis zum Ende keine Annahmebestätigung empfangen");
         endedLocally=notify;
         String id=callId;Peer old=peer;String oldState=state;IntercomServer.Link oldLink=link;
-        if(oldState.equals("broadcasting")){Peer all=new Peer("",2324,false);all.id="";all.name="Alle Kiosks";history.add(all,true,true,started,since,reason);}else history.add(old,outgoing,broadcast,started,since,reason);
+        if(oldState.equals("broadcasting")){Peer all=new Peer("",2324,false);all.id="";all.name=announcementTitle;history.add(all,true,true,started,since,reason);}else history.add(old,outgoing,broadcast,started,since,reason);
         if(oldState.equals("broadcasting")){for(Peer p:announcementPeers.values())if(notify)notifyAnnouncementEnd(p,id);for(IntercomServer.Link l:announcementLinks.values()){if(notify)l.text(Wire.obj("type","end").toString());l.close();}announcementLinks.clear();announcementPeers.clear();}
         state="idle";callId="";link=null;peer=null;sending=false;handsFree=false;since=0;detail=reason;
         if(timeout!=null)timeout.cancel(false);audio.stop();phoneManaged=false;phoneMuted=false;
