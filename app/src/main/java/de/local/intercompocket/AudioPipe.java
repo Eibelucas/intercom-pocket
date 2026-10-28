@@ -28,6 +28,30 @@ final class AudioPipe {
     private Thread capture, playback;
     private AudioFocusRequest focus;
     private boolean managed;
+    private volatile boolean speakerOn;
+    private final AudioDeviceCallback devices =
+            new AudioDeviceCallback() {
+                @Override
+                public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                    route();
+                }
+
+                @Override
+                public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                    route();
+                }
+            };
+    private boolean watchingDevices;
+
+    /** Preferred headset routes, most specific first. */
+    private static final int[] HEADSETS = {
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_HEARING_AID,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+    };
 
     synchronized void telecomManaged(boolean on) {
         if (running) throw new IllegalStateException("Audio already running");
@@ -78,10 +102,13 @@ final class AudioPipe {
             startupStep = "audio mode";
             manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             try {
-                speaker(!microphone);
+                speaker(!microphone && !headsetConnected());
             } catch (RuntimeException ex) {
                 diagnostics.error("Speaker selection (optional)", ex);
             }
+            manager.registerAudioDeviceCallback(
+                    devices, new android.os.Handler(android.os.Looper.getMainLooper()));
+            watchingDevices = true;
         }
         startupStep = "playback";
         AudioFormat format =
@@ -254,15 +281,46 @@ final class AudioPipe {
     }
 
     void speaker(boolean on) {
+        speakerOn = on;
+        route();
+    }
+
+    boolean headsetConnected() {
+        return headset() != null;
+    }
+
+    private AudioDeviceInfo headset() {
+        if (manager == null) return null;
+        java.util.List<AudioDeviceInfo> available = manager.getAvailableCommunicationDevices();
+        for (int type : HEADSETS)
+            for (AudioDeviceInfo d : available) if (d.getType() == type) return d;
+        return null;
+    }
+
+    /** Speaker when requested, otherwise a connected headset, otherwise the earpiece. */
+    private void route() {
         if (managed) return;
-        for (AudioDeviceInfo d : manager.getAvailableCommunicationDevices())
-            if (d.getType()
-                    == (on
-                            ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                            : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)) {
-                manager.setCommunicationDevice(d);
-                break;
+        try {
+            AudioDeviceInfo target = speakerOn ? null : headset();
+            if (target == null) {
+                int type =
+                        speakerOn
+                                ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                                : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+                for (AudioDeviceInfo d : manager.getAvailableCommunicationDevices())
+                    if (d.getType() == type) {
+                        target = d;
+                        break;
+                    }
             }
+            AudioDeviceInfo current = manager.getCommunicationDevice();
+            if (target != null && (current == null || current.getId() != target.getId())) {
+                manager.setCommunicationDevice(target);
+                diagnostics.event("Audio route: " + target.getType());
+            }
+        } catch (RuntimeException ex) {
+            diagnostics.error("Audio routing (optional)", ex);
+        }
     }
 
     synchronized void stop() {
@@ -296,6 +354,10 @@ final class AudioPipe {
             echo = null;
         }
         queue.clear();
+        if (watchingDevices) {
+            manager.unregisterAudioDeviceCallback(devices);
+            watchingDevices = false;
+        }
         if (!managed) {
             manager.clearCommunicationDevice();
             manager.setMode(AudioManager.MODE_NORMAL);

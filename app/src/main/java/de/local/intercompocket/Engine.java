@@ -618,7 +618,7 @@ final class Engine implements IntercomServer.Listener {
         broadcast = kind.equals("broadcast");
         handsFree = false;
         sending = false;
-        speaker = broadcast;
+        speaker = broadcast && !audio.headsetConnected();
         since = 0;
         started = System.currentTimeMillis();
         detail = "";
