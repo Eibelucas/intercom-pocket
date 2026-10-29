@@ -1,4 +1,4 @@
-# Intercom Satelite
+# Intercom Satellite
 
 Unofficial Android companion for [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite). Install a signed APK on Android 12 or later, enter the same Intercom key as your kiosks, and enable the app's phone account to receive calls in the system Phone app. The package ID is unchanged from Intercom Pocket; updates must be signed with the original signing certificate.
 
@@ -16,16 +16,17 @@ Calls and announcements stay on the local network. Audio is never recorded. No K
 - Local metadata-only call history with verified callback; no audio or shared secret in history
 - Weekly quiet hours, overnight schedules, and selected kiosk exceptions; manual Do Not Disturb still blocks everyone
 - Temporary Do Not Disturb for 30 minutes, two hours, or until 07:00 tomorrow; expiration preserves scheduled quiet hours
-- Room aliases, icons, favorites, and system/light/dark themes with teal, blue, plum, or Android dynamic accent colors
-- A dedicated settings page, a card-based call screen, and a full call-history page with callbacks
+- Room aliases, icons, favorites, and system/light/dark mode. The UI is Material 3 with Material You: all colors come from the system's dynamic palette, there are no custom colors or accent choices
+- English and German, following the system language (selectable per app on Android 13+)
+- A dedicated settings page, a card-based call screen, and a full call-history page with callbacks. Sub-screens use a Material top app bar whose back arrow shares the title's row
 
-Long-press a kiosk row to edit its name, symbol, or favorite status. Add a widget from the Android home screen and select its kiosk. The widget opens the app, rechecks the saved kiosk identity, and then calls. Boot reception and quiet hours are configured in settings.
+Use the options button on a kiosk card to edit its name, symbol, or favorite status. Add a widget from the Android home screen and select its kiosk. The widget opens the app, rechecks the saved kiosk identity, and then calls. Boot reception and quiet hours are configured in settings.
 
-Use **Raumgruppen verwalten** on the home screen to create, edit, or delete groups of 1–32 previously connected kiosks. Membership follows kiosk IDs, not IP addresses or aliases. **Durchsage starten …** offers all available kiosks, a one-time selection, and saved groups. Only currently discovered or manually added, ready members are contacted; offline members are shown and an empty/unavailable selection never falls back to all kiosks. Groups remain local to this phone.
+Use **Room groups** (top bar of the home screen) to create, edit, or delete groups of 1–32 previously connected kiosks. Membership follows kiosk IDs, not IP addresses or aliases. **Start announcement** offers all available kiosks, a one-time selection, and saved groups. Only currently discovered or manually added, ready members are contacted; offline members are shown and an empty/unavailable selection never falls back to all kiosks. Groups remain local to this phone.
 
-In settings, switch **Durchsagen empfangen** off and save to refuse incoming announcements; the existing default is on. Calls still ring unless Do Not Disturb or quiet hours block them. **Nicht stören für …** on the home screen stores an expiration time that survives an app/device restart. The ordinary switch still enables indefinite Do Not Disturb, or cancels the current timer when turned off. At expiration, call handling uses the current quiet-hour rules immediately; the background notification refreshes within five seconds while the service is running.
+In settings, switch **Receive announcements** off and save to refuse incoming announcements; the existing default is on. Calls still ring unless Do Not Disturb or quiet hours block them. **Do not disturb for …** on the home screen stores an expiration time that survives an app/device restart. The ordinary switch still enables indefinite Do Not Disturb, or cancels the current timer when turned off. At expiration, call handling uses the current quiet-hour rules immediately; the background notification refreshes within five seconds while the service is running.
 
-German guides: [Installation and setup](docs/Einrichtung.md) · [Version 1.3.0 validation](docs/Pruefbericht-1.3.0.md).
+Setup guide: [docs/Setup.md](docs/Setup.md).
 
 ## Build and signing
 
